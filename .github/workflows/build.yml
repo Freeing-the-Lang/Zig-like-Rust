@@ -1,15 +1,18 @@
-name: "Zig-like-Rust — Build + ProofLedger + Auto Release"
+name: "Zig-like-Rust — Build + ProofLedger + Conditional Release"
 
 on:
   push:
-    tags: [ 'v*' ]   # v1.0.0 같은 태그 푸시 시 릴리즈 자동 생성
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "example.zr"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: zig-like-rust-release-${{ github.ref }}
+  group: zig-like-rust-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,48 +24,29 @@ jobs:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
 
     steps:
-      # -----------------------------------------
-      # Checkout
-      # -----------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # -----------------------------------------
-      # Install Rust
-      # -----------------------------------------
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # -----------------------------------------
-      # Cargo build
-      # -----------------------------------------
-      - name: Build (release)
+      - name: Build project
         run: cargo build --release
 
-      # -----------------------------------------
-      # Run DSL example
-      # -----------------------------------------
       - name: Run example.zr
-        run: |
-          cargo run --release > out-run.txt
+        run: cargo run --release > out-run.txt
 
-      # -----------------------------------------
-      # Generate ProofLedger
-      # -----------------------------------------
       - name: Generate ProofLedger
         run: |
-          echo "Repository: Zig-like-Rust"                                 >  proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Commit: ${{ github.sha }}"                                >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "OS: ${{ matrix.os }}"                                     >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Build Time: $(date)"                                      >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Output: out-run.txt"                                      >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "Repository: Zig-like-Rust"                                 >  proofledger-${{ matrix.os }}-${{ github.sha }}.txt
+          echo "Commit: ${{ github.sha }}"                                >> proofledger-${{ matrix.os }}-${{ github.sha }}.txt
+          echo "OS: ${{ matrix.os }}"                                     >> proofledger-${{ matrix.os }}-${{ github.sha }}.txt
+          echo "Build Time: $(date)"                                      >> proofledger-${{ matrix.os }}-${{ github.sha }}.txt
+          echo "Output: out-run.txt"                                      >> proofledger-${{ matrix.os }}-${{ github.sha }}.txt
 
-      # -----------------------------------------
-      # Upload artifacts (OS별)
-      # -----------------------------------------
-      - name: Upload run output
+      - name: Upload out-run
         uses: actions/upload-artifact@v4
         with:
           name: out-run-${{ matrix.os }}
@@ -72,50 +56,48 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: proofledger-${{ matrix.os }}
-          path: proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          path: proofledger-${{ matrix.os }}-${{ github.sha }}.txt
 
-      - name: Upload executable
+      - name: Upload Executable
         uses: actions/upload-artifact@v4
         with:
           name: zig-like-rust-binary-${{ matrix.os }}
           path: |
             target/release/zig_like_rust
             target/release/zig_like_rust.exe
-        continue-on-error: true   # 파일 없는 OS에서는 단순 통과
+        continue-on-error: true
 
-  # ---------------------------------------------------
-  # RELEASE JOB — tag push 시 자동 Release 생성
-  # ---------------------------------------------------
   release:
     name: "Publish Release"
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')  # 태그 푸시일 때만 실행
+
+    # 👉 조건: src 또는 example 변경된 push 일 때만 실행됨
+    if: github.event_name == 'push'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 아티팩트 다운로드
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: release_assets/
 
-      # GitHub Release 생성
+      - name: Create Release Tag Name
+        id: tag
+        run: echo "TAG=v_${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "Zig-like-Rust ${{ github.ref_name }}"
+          tag_name: ${{ env.TAG }}
+          name: "Zig-like-Rust Release ${{ env.TAG }}"
           body: |
-            🚀 **Zig-like-Rust Release — ${{ github.ref_name }}**
-
-            포함된 항목:
-            - 3OS 빌드 결과 바이너리
-            - ProofLedger (OS별)
-            - example.zr 실행 결과(out-run)
-            - 자동 빌드 / 의미 해석 엔진 완성본
-
-          files: |
-            release_assets/**/*
+            🔥 **Zig-like-Rust 자동 릴리즈 — ${{ env.TAG }}**
+            - src/ 또는 example.zr 변경 감지됨 → 자동 릴리즈 생성
+            - 3OS 빌드 완료
+            - ProofLedger 포함
+            - out-run 결과 포함
+            - 실행파일 포함
+          files: release_assets/**/*
