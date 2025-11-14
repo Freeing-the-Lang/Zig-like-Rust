@@ -1,0 +1,3 @@
+const x = 10;
+const y = add(20, x);
+print(y);
