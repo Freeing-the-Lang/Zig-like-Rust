@@ -1,16 +1,15 @@
-name: "Zig-like-Rust — 3OS Build + ProofLedger + Auto Release"
+name: "Zig-like-Rust — Build + ProofLedger + Auto Release"
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    tags: [ 'v*' ]   # v1.0.0 같은 태그 푸시 시 릴리즈 자동 생성
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: zig-like-rust-${{ github.ref }}
+  group: zig-like-rust-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -19,104 +18,104 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
 
     steps:
-      # --------------------------
+      # -----------------------------------------
       # Checkout
-      # --------------------------
-      - name: Checkout repository
+      # -----------------------------------------
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # --------------------------
-      # Rust Toolchain 설치
-      # --------------------------
+      # -----------------------------------------
+      # Install Rust
+      # -----------------------------------------
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # --------------------------
-      # Build
-      # --------------------------
-      - name: Build project
-        run: |
-          cargo build --release
+      # -----------------------------------------
+      # Cargo build
+      # -----------------------------------------
+      - name: Build (release)
+        run: cargo build --release
 
-      # --------------------------
-      # Run example.zr
-      # --------------------------
-      - name: Run Zig-like-Rust example
+      # -----------------------------------------
+      # Run DSL example
+      # -----------------------------------------
+      - name: Run example.zr
         run: |
-          echo "### Running example.zr ###"
           cargo run --release > out-run.txt
 
-      # --------------------------
+      # -----------------------------------------
       # Generate ProofLedger
-      # --------------------------
+      # -----------------------------------------
       - name: Generate ProofLedger
         run: |
-          echo "Repository: Zig-like-Rust"                                >  proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Commit: ${{ github.sha }}"                               >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "OS: ${{ matrix.os }}"                                    >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Build Time: $(date)"                                     >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Executable: target/release/zig_like_rust (or .exe)"      >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
-          echo "Output: out-run.txt"                                     >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "Repository: Zig-like-Rust"                                 >  proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "Commit: ${{ github.sha }}"                                >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "OS: ${{ matrix.os }}"                                     >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "Build Time: $(date)"                                      >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
+          echo "Output: out-run.txt"                                      >> proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
 
-      # --------------------------
-      # Upload Artifacts
-      # --------------------------
-      - name: Upload out-run.txt
+      # -----------------------------------------
+      # Upload artifacts (OS별)
+      # -----------------------------------------
+      - name: Upload run output
         uses: actions/upload-artifact@v4
         with:
-          name: out-run-${{ matrix.os }}-${{ github.ref_name }}
+          name: out-run-${{ matrix.os }}
           path: out-run.txt
 
       - name: Upload ProofLedger
         uses: actions/upload-artifact@v4
         with:
-          name: proofledger-${{ matrix.os }}-${{ github.ref_name }}
+          name: proofledger-${{ matrix.os }}
           path: proofledger-${{ matrix.os }}-${{ github.ref_name }}.txt
 
-      - name: Upload Executable
+      - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: zig-like-rust-${{ matrix.os }}-${{ github.ref_name }}
+          name: zig-like-rust-binary-${{ matrix.os }}
           path: |
             target/release/zig_like_rust
             target/release/zig_like_rust.exe
-        if-no-files-found: ignore
+        continue-on-error: true   # 파일 없는 OS에서는 단순 통과
 
-  # --------------------------
-  # Auto Release Section
-  # --------------------------
+  # ---------------------------------------------------
+  # RELEASE JOB — tag push 시 자동 Release 생성
+  # ---------------------------------------------------
   release:
-    name: "Create GitHub Release"
+    name: "Publish Release"
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/')  # 태그 푸시일 때만 실행
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 다운로드 artifacts
+      # 아티팩트 다운로드
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: release_assets/
 
-      # Create Release
-      - name: Create GitHub Release
+      # GitHub Release 생성
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: "Zig-like-Rust ${{ github.ref_name }}"
           body: |
             🚀 **Zig-like-Rust Release — ${{ github.ref_name }}**
-            - 자동 빌드 3OS 완료
-            - ProofLedger 포함
-            - 실행 결과(out-run) 포함
-            - 바이너리 포함
+
+            포함된 항목:
+            - 3OS 빌드 결과 바이너리
+            - ProofLedger (OS별)
+            - example.zr 실행 결과(out-run)
+            - 자동 빌드 / 의미 해석 엔진 완성본
+
           files: |
             release_assets/**/*
